@@ -1,0 +1,1708 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<style>
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+blockquote {
+    margin: 0;
+    padding: 0;
+}
+body {
+    font-family: "Helvetica Neue", Helvetica, "Hiragino Sans GB", Arial, sans-serif;
+    font-size: 13px;
+    line-height: 18px;
+    color: #737373;
+    background-color: white;
+    margin: 10px 13px 10px 13px;
+}
+table {
+	margin: 10px 0 15px 0;
+	border-collapse: collapse;
+}
+td,th {	
+	border: 1px solid #ddd;
+	padding: 3px 10px;
+}
+th {
+	padding: 5px 10px;	
+}
+
+a {
+    color: #0069d6;
+}
+a:hover {
+    color: #0050a3;
+    text-decoration: none;
+}
+a img {
+    border: none;
+}
+p {
+    margin-bottom: 9px;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: #404040;
+    line-height: 36px;
+}
+h1 {
+    margin-bottom: 18px;
+    font-size: 30px;
+}
+h2 {
+    font-size: 24px;
+}
+h3 {
+    font-size: 18px;
+}
+h4 {
+    font-size: 16px;
+}
+h5 {
+    font-size: 14px;
+}
+h6 {
+    font-size: 13px;
+}
+hr {
+    margin: 0 0 19px;
+    border: 0;
+    border-bottom: 1px solid #ccc;
+}
+blockquote {
+    padding: 13px 13px 21px 15px;
+    margin-bottom: 18px;
+    font-family:georgia,serif;
+    font-style: italic;
+}
+blockquote:before {
+    content:"\201C";
+    font-size:40px;
+    margin-left:-10px;
+    font-family:georgia,serif;
+    color:#eee;
+}
+blockquote p {
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 18px;
+    margin-bottom: 0;
+    font-style: italic;
+}
+code, pre {
+    font-family: Monaco, Andale Mono, Courier New, monospace;
+}
+code {
+    background-color: #fee9cc;
+    color: rgba(0, 0, 0, 0.75);
+    padding: 1px 3px;
+    font-size: 12px;
+    -webkit-border-radius: 3px;
+    -moz-border-radius: 3px;
+    border-radius: 3px;
+}
+pre {
+    display: block;
+    padding: 14px;
+    margin: 0 0 18px;
+    line-height: 16px;
+    font-size: 11px;
+    border: 1px solid #d9d9d9;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+pre code {
+    background-color: #fff;
+    color:#737373;
+    font-size: 11px;
+    padding: 0;
+}
+sup {
+    font-size: 0.83em;
+    vertical-align: super;
+    line-height: 0;
+}
+* {
+	-webkit-print-color-adjust: exact;
+}
+@media screen and (min-width: 914px) {
+    body {
+        width: 854px;
+        margin:10px auto;
+    }
+}
+@media print {
+	body,code,pre code,h1,h2,h3,h4,h5,h6 {
+		color: black;
+	}
+	table, pre {
+		page-break-inside: avoid;
+	}
+}
+</style>
+<title>BrainF**k compiler with LLVM</title>
+
+</head>
+<body>
+<h1>BrainF**k with LLVM</h1>
+
+<h2>Introduction</h2>
+
+<p>Let's write a compiler using LLVM. Since LLVM (Low Level Virtual Memory) manages the generation and the execution of native binary code, we only need to focus on the part that read our program source code and makes all LLVM API calls.</p>
+
+<p><a href="http://esolangs.org/wiki/brainfuck">BrainF**k</a> is a good introduction to compiler programmation because it use much of basic tools of LLVM API, needed to create more complex compiler.</p>
+
+<h2>BrainF**k</h2>
+
+<p>BrainF**k language is very easy: the internal structure is composed of an array of cells and a cursor. The cursor allows to access (read or write) a cell and each cell contains a number (basically from 0, by default, to 255, to be output as ASCII).</p>
+
+<p>You've got 8 operations:</p>
+
+<pre>
+'<' and '>' to move the cursor to access another cell (move to left and right)
+'+' and '-' to change the value of the current cell, where the cursor stands (to increment and decrement)
+',' and '.' to input (ask the user a value to set) and to output (print the value) the current cell
+'[' and ']' to do conditional looping depending of the current cell value (enter the loop the current celle value > 0 and exit if it equals to 0)
+</pre>
+
+
+<p>For example, this dummy program:</p>
+
+<pre>
+>><+++<++>--[->+<]>.
+</pre>
+
+
+<p>will gives the output: 1</p>
+
+<p>The state of cells and cursor at the end of the execution is:</p>
+
+<pre>
+cells : [2][0][1]
+cursor:        ^
+</pre>
+
+
+<p>Detailled operations:</p>
+
+<pre>
+>>  : set cursor to 0 + 2 = 2
+<   : set cursor to 2 - 1 = 1
++++ : add 3 to current cell value ([1] = 3)
+<   : set cursor to 1 - 1 = 0
+++  : add 2 to current cell value ([0] = 2)
+>   : set cursor to 0 + 1 = 1
+--  : subtract 2 to current cell value ([1] = 3 - 2 = 1)
+[   : enter the loop since the current cell value > 0 ([1] = 1)
+-   : subtract 1 to current cell value ([1] = 1 - 1 = 0)
+>   : set cursor to 1 + 1 = 2
++   : add 2 to current cell value ([2] = 0 + 1 = 1)
+<   : set cursor to 1 - 1 = 1
+]   : exit the loop since the current cell value is 0
+>   : set cursor to 1 + 1 = 2
+.   : print the current cell value ([2] = 1)
+</pre>
+
+
+<h2>Compiler &amp; LLVM</h2>
+
+<p>The definition of a compiler is a program that transform a format of file to another. For example, XSD allows to transform XML to HTML, Dart compiler to transform Dart script to Javascript, etc. In our case, we want our compiler to transform BrainF**k files to native code, for x86, ARM or else.</p>
+
+<p>For flexibility reasons, we compile (transform) our BF file to an intermediate language (much lower level) and LLVM compiles this to assembler, which once linked, gives native binary. Hopefully, most works are done by LLVM like assembler generation, we only need to compile our input file to this intermediate language, called <em>Intermediate Representation</em>. This kind of compiler is called a <em>front-end</em> for LLVM (generate IR form input file). The compiler which generate assembler from IR is called a <em>back-end</em>.</p>
+
+<p>Intermediate language allows low-level optimisations and is totally <em>platform independent</em>, so this representation program will be exactly the same even if you want to generate binary code to x86, ARM or Sparc architecture. Basically, intermediate language allows memory operation (allocation, reading and writing data from/to memory), arithmetic operation (add, mul, xor, etc.), basic data structure (c-like struct and array) and integration to external c-function (printf, scanf, etc.).</p>
+
+<pre>
+                 |--   Front-end   --|                                          |--          Back-end         --|
+[Source code] -> [Parser] --- LLVM API --> [IR (Intermediate Representation)] -> [Compilation] -> [Native binary] -> [Execution] -> [Output]
+                              |--                         LLVM (Low Level Virtual Machine)                    --|
+</pre>
+
+
+<p>For example, <em>clang</em> (C/C++ compiler based on LLVM) will follow this schema:</p>
+
+<pre>
+                       |-                     clang                      -|
+[C/C++ code source] -> [Parser] -> [IR] -> [Compilation] -> [Native binary] -> [Execution] -> [Output]
+|--   hello.c   --|    |--            $ clang hello.c -o hello          --|    |--    $ ./hello    --|
+</pre>
+
+
+<p>As LLVM is a "Virtual Machine", it also can execute code without to generate native binary, following this schema:</p>
+
+<pre>
+                 |--   Front-end   --|                                         
+[Source code] -> [Parser] --- LLVM API --> [IR (Intermediate Representation)] -> [Execution] -> [Output]
+                              |--              LLVM (Low Level Virtual Machine)          --|
+</pre>
+
+
+<p>The performance are the same that a native binary, it's just a convenient way to execute native code without to export a binary. You can choose, once the IR generate from your compiler, to execute native code from the Virtual Machine or to export native binary.</p>
+
+<h2>Installation</h2>
+
+<p>Simply, to install the lasted version of LLVM with git:</p>
+
+<pre>
+$ git clone http://llvm.org/git/llvm.git
+$ cd llvm/
+$ ./configure
+$ sudo make install
+</pre>
+
+
+<p>More informations on <a href="http://llvm.org/docs/GettingStarted.html#git-mirror">installation wiki</a>.</p>
+
+<h2>BF Parser</h2>
+
+<p>First, we need to get <em>tokens</em> from our BF program. We will ignore (skip) all characters that are not BF commands (note that we use char, not string):</p>
+
+<pre>
+bool Parser::isSkipable(char c)
+{
+  return (c != '<' && c != '>' &&
+          c != '+' && c != '-' &&
+          c != '.' && c != ',' &&
+          c != '[' && c != ']');
+}
+</pre>
+
+
+<p>The method <code>getToken</code> returns the next valid character (token).</p>
+
+<p>The <code>while</code> loop will stop when <code>c</code> will be equal to zero, and since the last character of <code>_data</code> (at index <code>index</code>) is zero (null-character terminated string), the method will stop when it reaches the end of the string.</p>
+
+<p>Since we want to skip ignored character, the <code>while</code> will loop until a non-ignored character is found (or the end of the string).</p>
+
+<pre>
+char Parser::getToken()
+{
+  char c = 0;
+  while ( (c = _data[_index++]) && isSkipable(c) ) { }
+  return c;
+}
+</pre>
+
+
+<p>Note: the <code>while ( (var = value) ) { }</code> pattern is common, it's a shorter way to do:</p>
+
+<pre>
+while (1) {
+  var = value;
+  if (var == 0) {
+    break;
+  }
+}
+</pre>
+
+
+<p>Note the extra parenthesis <code>(var = value)</code>, this not evaluates the assignment (always true) but the value of the variable assigned, <code>var</code> in this case; if <code>var</code> is greater than zero, the <code>while</code> loop continues to loop. A warning (with <code>-Wall</code>) shows up if the extra parenthesis are missing.</p>
+
+<p>Now, we can create our parser class:</p>
+
+<pre>
+class Parser
+{
+protected:
+  string _data;
+  int _index;
+  
+  static bool isSkipable(char c);
+  char getToken();
+public:
+  Parser(string s) : _data(s), _index(0) { }
+};
+</pre>
+
+
+<p>The default constructor will take a string, the program, store it into <code>_data</code> and will parse it.</p>
+
+<p>Note: Be careful to hide (under <code>protected:</code> or <code>private:</code>) all method and variables that shouldn't be accessed outside the class.
+The protected <code>getToken()</code> method is a good example, we don't want to access (and modify <code>_index</code>) outside the parser class.</p>
+
+<p>For debugging propose, we will expose protected and private variables and methods, don't forget to hide them after tests.</p>
+
+<p>Usage:</p>
+
+<pre>
+class Parser
+{
+protected:
+  string _data;
+  int _index;
+  
+  static bool isSkipable(char c);
+--  char getToken();
+public:
+  Parser(string s) : _data(s), _index(0) { }
+  
+++  char getToken();
+};
+
+string s = ">>+++ <<3 + >++ < 123 abc .>.>.";
+Parser parser(s);
+char c = 0;
+while ( (c = parser.getToken()) ) {
+  cout << c << " ";
+}
+</pre>
+
+
+<p>This writes out: <code>&gt; &gt; + + + &lt; &lt; + &gt; + + &lt; . &gt; . &gt; .</code> and ignored characters are ignored indeed.</p>
+
+<p>Put back the <code>getToken()</code> method into protected section.</p>
+
+<p>Let's now write the <code>parse()</code> method.
+We will use the pattern from the last example but we will create a case for each item:</p>
+
+<pre>
+class Parser
+{
+protected:
+  string _data;
+  int _index;
+  
+  static bool isSkipable(char c);
+  char getToken();
+++  void parse();
+public:
+  Parser(string s) : _data(s), _index(0)
+  { parse(); }
+};
+
+++ void Parser::parse()
+++ {
+++    char c = 0;
+++    while ( (c = getToken()) ) {
+++      switch (c) {
+++        case '<':
+++          cout << "go to left" << endl; break;
+++        case '>':
+++          cout << "go to right" << endl; break;
+++        case '+':
+++          cout << "add one" << endl; break;
+++        case '-':
+++          cout << "substract one" << endl; break;
+++        case '.':
+++          cout << "print" << endl; break;
+++        case ',':
+++          cout << "ask for value" << endl; break;
+++        case '[':
+++          cout << "start loop" << endl; break;
+++        case ']':
+++          cout << "end loop" << endl; break;
+++        default: break; // Ignored character
+++      }
+++    }
+++ }
+</pre>
+
+
+<p>Now our parser knows how to handle each character, we use it to create a AST (Abstract Structure Tree) where we will create an object for each case.</p>
+
+<p>Let's begin with the "move to" operation and we will call it the "shift" expression. We can create a single shift expression for right and left, the first add one to cursor (+1), the latter remove one (-1) and we need to check that the cursor can't be less than zero.</p>
+
+<p>The class looks like this:</p>
+
+<pre>
+class ShiftExpr
+{
+protected:
+  int _step;
+public:
+  ShiftExpr(int step) : _step(step) { }
+};
+</pre>
+
+
+<p>We will inherit this class from an abstract (virtual) <code>Expr</code> class which contains a public <code>CodeGen()</code> method to generate the LLVM code, we will see the implementation later.</p>
+
+<pre>
+class Expr
+{
+public:
+  virtual void CodeGen() = 0;
+};
+</pre>
+
+
+<p>and we update our <code>ShiftExpr</code> to inherite from <code>Expr</code> publicly to allow polymorphism:</p>
+
+<pre>
+class ShiftExpr : public Expr
+{
+protected:
+  int _step;
+public:
+  ShiftExpr(int step) : _step(step) { }
+  void CodeGen();
+};
+
+void ShiftExpr::CodeGen()
+{
+  // We will implement this later
+}
+
+</pre>
+
+
+<p>Now, we will use this class into the parse method. This create an shift expr which could generate LLVM bitcode.
+Expressions will be stored into a vector (some sort of array).</p>
+
+<pre>
+#include &lt;vector&gt;
+</pre>
+
+
+
+
+<pre>
+class Parser
+{
+protected:
+  string data;
+  int index;
+++  vector&lt;Expr *&gt; exprs;
+  
+  static bool isSkipable(char c);
+  char getToken();
+  void parse();
+public:
+  Parser(string s) : data(s), index(0)
+  { parse(); }
+};
+
+void Parser::parse()
+{
+  char c = 0;
+  while ( (c = getToken()) ) {
+++    Expr *expr = NULL;
+    switch (c) {
+      case '<': {
+++        expr = new ShiftExpr(-1); // Shift to the left
+++      }
+          break;
+      case '>': {
+++        expr = new ShiftExpr(1); // Shift to the right
+++      }
+          break;
+      case '+':
+          cout << "add one" << endl; break;
+      case '-':
+          cout << "substract one" << endl; break;
+      case '.':
+          cout << "print" << endl; break;
+      case ',':
+          cout << "ask for value" << endl; break;
+      case '[':
+          cout << "start loop" << endl; break;
+      case ']':
+          cout << "end loop" << endl; break;
+      default: break; // Ignored character
+    }
+++    if (expr) {
+++      exprs.push_back(expr);
+++    }
+  }
+}
+</pre>
+
+
+<p>And we will create three more expressions: <code>IncrementExpr</code>, <code>InputExpr</code> and <code>OutputExpr</code> like that:</p>
+
+<pre>
+class IncrementExpr : public Expr
+{
+protected:
+  int _increment;
+public:
+  IncrementExpr(int increment) : _increment(increment) { }
+  void CodeGen();
+};
+
+void IncrementExpr::CodeGen()
+{
+  // We will implement this later
+}
+</pre>
+
+
+
+
+<pre>
+class InputExpr : public Expr
+{
+public:
+  InputExpr() { }
+  void CodeGen();
+};
+
+void InputExpr::CodeGen()
+{
+  // We will implement this later
+}
+</pre>
+
+
+
+
+<pre>
+class OutputExpr : public Expr
+{
+public:
+  OutputExpr() { }
+  void CodeGen();
+};
+
+void OutputExpr::CodeGen()
+{
+  // We will implement this later
+}
+</pre>
+
+
+<p>And, again, update the <code>parse()</code> method:</p>
+
+<pre>
+void Parser::parse()
+{
+  char c = 0;
+  while ( (c = getToken()) ) {
+    Expr *expr = NULL;
+    switch (c) {
+      case '<': {
+        expr = new ShiftExpr(-1); // Shift to the left
+      }
+          break;
+      case '>': {
+        expr = new ShiftExpr(1); // Shift to the right
+      }
+          break;
+      case '+': {
+++        expr = new IncrementExpr(1); // Increment (add 1)
+++      }
+        break;
+      case '-': {
+++        expr = new IncrementExpr(-1); // Decrement (substract 1)
+++      }
+        break;
+      case '.': {
+++        expr = new OutputExpr(); // Output value
+++      }
+        break;
+      case ',': {
+++        expr = new InputExpr(); // Output value
+++      }
+        break;
+      case '[':
+          cout << "start loop" << endl; break;
+      case ']':
+          cout << "end loop" << endl; break;
+      default: break; // Ignored character
+    }
+++    if (expr) {
+++      exprs.push_back(expr);
+++    }
+  }
+}
+</pre>
+
+
+<p>Now, a little bit more complicated: the loop. A loop starts with <code>[</code> and ends <code>]</code>. The program enters the loop only if the value at the current cursor is greater than zero and the program ends the loop only if the value at the current cursor is equal to zero. We will see later how to create a loop with LLVM IR language but for now, we only need to create a new class <code>LoopExpr</code> which contains all expressions inside the loop.</p>
+
+<p>As a loop can contain other loops, we will use recursive calls of <code>parse()</code> function, so we need to modify this method to allow reccursivity. In place for calling the function with no arguments, we will use the vector which holds parser expressions as argument.</p>
+
+<p>The new version of the prototype is simply:</p>
+
+<pre>
+void Parser::parse(vector<Expr *> &exprs);
+</pre>
+
+
+<p>and the implementation doesn't change.</p>
+
+<p>Also, we need to change the calling into the default constructor:</p>
+
+<pre>
+Parser(string s) : data(s), index(0)
+{ parse(exprs); }
+</pre>
+
+
+<p>Note: Don't confound the initialisation of instance variables, after the <code>:</code> and the calling of a method inside the method body. These cases aren't correct:</p>
+
+<pre>
+Parser(string s) : data(s), index(0), parse(exprs) // error
+{ }
+</pre>
+
+
+
+
+<pre>
+Parser(string s)
+{
+  data(s); index(0); // error
+  parse(exprs);
+}
+</pre>
+
+
+<p>If you are not confident with this writing, you could also write this:</p>
+
+<pre>
+Parser(string s)
+{
+  data = s; index = 0;
+  parse(exprs);
+}
+</pre>
+
+
+<p>Now, let's write our <code>LoopExpr</code> class, which be initialised with a vector of expressions:</p>
+
+<pre>
+class LoopExpr : public Expr
+{
+protected:
+  vector<Expr *> _exprs;
+public:
+  LoopExpr(vector<Expr *> &exprs) : _exprs(exprs) { }
+  void CodeGen();
+};
+
+void LoopExpr::CodeGen()
+{
+  // We will implement this later
+}
+</pre>
+
+
+<p>We create the vector when the parser will find a start loop character <code>[</code>:</p>
+
+<pre>
+void Parser::parse(vector<Expr *> &exprs)
+{
+  char c = 0;
+  while ( (c = getToken()) ) {
+    Expr *expr = NULL;
+    switch ( c ) {
+      case '<': {
+        expr = new ShiftExpr(-1); // Shift to the left
+      }
+          break;
+      case '>': {
+        expr = new ShiftExpr(1); // Shift to the right
+      }
+          break;
+      case '+': {
+        expr = new IncrementExpr(1); // Increment (add 1)
+      }
+        break;
+      case '-': {
+        expr = new IncrementExpr(-1); // Decrement (substract 1)
+      }
+        break;
+      case '.': {
+        expr = new OutputExpr(); // Output value
+      }
+        break;
+      case ',': {
+        expr = new InputExpr(); // Output value
+      }
+        break;
+      case '[': {
+++        vector<Expr *> loopExprs;
+++        parse(loopExprs); // Enter into a new function
+++        expr = new LoopExpr(loopExprs);
+      }
+          break;
+      case ']': {
+++        return ; // Exit the function
+      }
+      default: break; // Ignored character
+    }
+    if (expr) {
+      exprs.push_back(expr);
+    }
+  }
+}
+</pre>
+
+
+<p>Each time the parser will find a <code>[</code> character, it will call the same method <code>parse(vector&lt;Expr *&gt; &amp;exprs)</code> method and when it will found the associated <code>]</code>, it will quit this function.
+Let's look at this simple BF example:</p>
+
+<pre>
+++[+[-]]
+</pre>
+
+
+<p>At the beginning, we initialising the parser and calling the <code>parse</code>method. Then, the current cell is incrementing by two before entering the loop. The parser finds a start loop character <code>[</code> so it calls the <code>parse</code> method again by passing a empty vector argument.</p>
+
+<p>The parser will continue from the current token, after the <code>[</code> (inside the loop) and will parsing the next <code>+</code>, which increment again the current cell. Then, another <code>[</code> is found, and the parser will one time more calls the <code>parse</code> method with a new brand vector argument. A this time, no <code>LoopExpr</code> is yet created, not until a matching <code>]</code> is found. The trace looks like:</p>
+
+<pre>
+parse this: "++[+[-]]" {
+  // '+' found
+  // '+' found
+  // First '[' found here, call 'parse'
+  parse this: "+[-]]" {
+    // '+' found
+    // Another '[' found here, call 'parse'
+    parse this: "-]]" {
+      // We are here
+    }
+  }
+}
+</pre>
+
+
+<p>Next, we decrement the current cell and a matching <code>]</code> is found, it's time to exit the current loop. At this precise time, the <code>parse</code> method exits and the parser goes on by creating an instance of <code>LoopExpr</code> by passing the vector wich contains an instance of <code>IncrementExpr</code>, created from the previous <code>-</code> character. Then, another <code>]</code> is found, create a <code>LoopExpr</code> with previous expression and exit. The trace looks like:</p>
+
+<pre>
+parse this: "++[+[-]]" {
+  // '+' found
+  // '+' found
+  // First '[' found here, call 'parse'
+  parse this: "+[-]]" {
+    // '+' found
+    // Another '[' found here, call 'parse'
+    parse this: "-]]" {
+      // '-' found
+      // A ']' found here, create a 'LoopExpr' with '-' and exit
+      return
+    }
+    // A ']' found here, create a 'LoopExpr' with: '+' and the previous 'LoopExpr' (which contains '-')
+    // and then, exit
+    return
+  }
+  // End of program
+}
+</pre>
+
+
+<p>As the <code>parse()</code> method takes a reference to a vector, with can modify it inside the method and getting a up-to-date version when the method exits, needed to create an new <code>LoopExpr</code> instance (we could also return the vector when exiting the method but this latter solution required to create a copy of a vector, which can more expensive that using a reference).</p>
+
+<p>We also need to add a <code>CodeGen()</code> method to Parser, it will be the entry point to generate native code from the vector of expressions:</p>
+
+<pre>
+/** Parser.h **/
+class Parser
+{
+protected:
+  std::string data;
+  int index;
+  std::vector<Expr *> _exprs;
+  
+  static bool isSkipable(char c);
+  char getToken();
+  void parse(std::vector<Expr *> &exprs);
+public:
+  Parser(std::string s) : data(s), index(0)
+  { parse(_exprs); }
+  
+++  void CodeGen(Module *M, IRBuilder<> &B);
+  void DebugDescription(int level);
+};
+</pre>
+
+
+
+
+<pre>
+/** Parser.cpp **/
+++ void Parser::CodeGen(Module *M, IRBuilder<> &B)
+++ {
+++ }
+</pre>
+
+
+<h2>Refactoring</h2>
+
+<p>Now our whole is about 200 lines of code, it's time for refactoring!
+The idea is to separate part into different files like <code>BrainF.cpp</code> with out <code>main</code> function, <code>Parser.cpp</code> for the <code>Parser</code> class, <code>Expr.cpp</code> for <code>*Expr</code> classes and <code>CodeGen.cpp</code> for all <code>*Expr::CodeGen()</code> methods implementation (as we will see, this file could be the biggest file of the program, it's important to separate from <code>*Expr</code> classes definition).
+Let's create <code>Brain.cpp</code>, <code>Expr.cpp</code> and <code>CodeGen.cpp</code> but also header files like so:</p>
+
+<pre>
+- BrainF.h
+- BrainF.cpp
+- Parser.h
+- Parser.cpp
+- Expr.h
+- Expr.cpp
+- CodeGen.h
+- CodeGen.cpp
+</pre>
+
+
+<p>Move <code>Parser</code> class definition to <code>Parser.h</code> and implementation to <code>Parser.cpp</code>. I recommend the header file to looks like</p>
+
+<pre>
+#ifndef PARSER_H
+#define PARSER_H
+
+#include <vector>
+#include "Expr.h"
+
+// Class declaration here
+
+#endif // PARSER_H
+</pre>
+
+
+<p>The define, like <code>PARSER_H</code> (uppercase path, <code>folder/my_file.h</code> could become <code>FOLDER_MY_FILE_H</code>), is used to avoid multiple inclusion [link].</p>
+
+<p><a href="./BF%20(Parser%20only)/">Code source</a></p>
+
+<p>We need to update the <code>Makefile</code> to include all <code>*.cpp</code>files:</p>
+
+<pre>
+all: build run
+
+build: Expr.cpp CodeGen.cpp Parser.cpp BrainF.cpp
+  clang++ Expr.cpp CodeGen.cpp Parser.cpp BrainF.cpp -o BrainF
+
+run: BrainF
+  ./BrainF
+</pre>
+
+
+<h1>LLVM API</h1>
+
+<p>Note: To follow LLVM coding rules for the API:</p>
+
+<ul>
+<li>indentation are created with two white-spaces (not a tab)</li>
+<li>each line of code should not be more than 85 columns long</li>
+<li>variables should be short, begins with an Uppercase letter and ends with the few first letters of the type; for example a Variable can be called "CountV" and a Type "IntTy"</li>
+</ul>
+
+
+<p>Examples:</p>
+
+<pre>
+llvm::Variable *CountV = ...;
+llvm::Type *IntTy = ...;
+llvm::BasicBlock *LoopBB = ...;
+llvm::IRBuilder<> LoopB(LoopBB);
+</pre>
+
+
+<p>Or with explicit namespace (preferred):</p>
+
+<pre>
+namespace llvm;
+
+Variable *CountV = ...;
+Type *IntTy = ...;
+BasicBlock *LoopBB = ...;
+IRBuilder<> LoopB(LoopBB);
+</pre>
+
+
+<h2>Let's started (seriously)</h2>
+
+<p>We now update our <code>XXXExpr::CodeGen</code> method to pass the module and the IR Builder to generate IR code.</p>
+
+<p><code>llvm:Module</code> contains informations about locals and globals variables, functions, etc.</p>
+
+<p><code>llvm::IRBuilder&lt;&gt;</code> is a template to add instructions to the current module.</p>
+
+<pre>
+void Parser::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Initialise the native code generator (initialise variables, etc.)
+  // @TODO: Recursively generate code by calling `CodeGen(M, B)`on each expression
+}
+
+void ShiftExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Add |_step| to the current index
+}
+
+void IncrementExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Add |_step| to the current cell
+}
+
+void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Call "scanf" std function
+  // @TODO: Put the input value to the current cell
+}
+
+void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Call "printf" std function
+}
+
+void LoopExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Create a loop
+  // @TODO: Enter the loop only if the current cell value is greater than zero
+  // @TODO: Exit the loop if the current cell value is equal to zero
+}
+</pre>
+
+
+<p>Into the <code>Parser</code> method, we will first create two <em>global</em> variables (the opposite of local variable) for the index and cells, and initialise them.</p>
+
+<p>The second step is to recursively call <code>CodeGen()</code> on each <code>*Expr</code> from |_expr|, with a simple for loop.</p>
+
+<pre>
+void Parser::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Create "index" global variable
+  // @TODO: Initialise "index" global variable
+  // @TODO: Create "cells" global variable
+  // @TODO: Initialise "cells" global variable
+
+  // Recursively generate code
+  for (std::vector<Expr *>::iterator it = _exprs.begin(); it != _exprs.end(); ++it) {
+    (*it)->CodeGen(M, B);
+  }
+}
+</pre>
+
+
+<p>For the <code>Shift</code> expression, it simple but we need to decompose each part. To change the value of a variable, the computer need 3 steps:</p>
+
+<ul>
+<li><p>Load the value at the given address (the pointer of the "index" global variable)</p></li>
+<li><p>Create a temporary variable to store the result of the operation ("index" + "step")</p></li>
+<li><p>Save the temporary variable value at the "index" address</p></li>
+</ul>
+
+
+<pre>
+void ShiftExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Get the value of "index" global variable
+  // @TODO: Create a temporary variable that contains the "index" + |_step| result
+  // @TODO: Save the "index" global variable
+}
+</pre>
+
+
+<p>It can look complicated but it's what your computer does every time it add two value from memory.</p>
+
+<p>It should be easy for you now to understand this basic IR code (all variables start with "%"):</p>
+
+<pre>
+%index = load %index_addr ; Load the address from (the given) "index_addr" to "index" (created)
+%temp = add %index, 1    ; Create "temp" variable with the result of "index" + 1
+store %temp, %index_addr ; Save (store) the value of "temp" at address "index_addr"
+</pre>
+
+
+<p>The <code>IncrementExpr</code> uses the same principle but this time, we need to load "index" first to get the value from "cells" at a specific index, the "index" value (the name makes sense now!).</p>
+
+<p>Once we've got "index", we need to compute the offset to get the cell value, load it, create a temporary variable to store the addition then save it back:</p>
+
+<pre>
+void IncrementExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Get the value of "index" global variable
+  // @TODO: Compute the offset of "cells" array based on "index"
+  // @TODO: Load the offset address from "cells"
+  // @TODO: Create a temporary variable that contains the "cells[index]" + |_step| result
+  // @TODO: Save the temporary variable at address "cells[index]"
+}
+</pre>
+
+
+<p>Note: You could ask why we use the <code>add</code> operator for decrement and not <code>sub</code>, since it's more natural. In old days for computing, <code>add -1</code> was generally much faster than "sub 1" but with modern architectures, it's different, and the best way is to let LLVM decides which platform-dependant optimisations will be made. Since IR code is platform independent, we can even not provide an hint for this. Just keep that LLVM will certainly knows better what to optimise and it's better to focus on algorithm and data structures optimisation than these silly ones, and keep the code clear for everyone.</p>
+
+<p>The <code>InputExpr</code> expression, we will simply use the <code>scanf</code> C function, LLVM will link to it during compilation. We just need to pass arguments to this function and call it. The single catch is to create a global variable to store the format string, but we already know how to do it.</p>
+
+<pre>
+void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Prepare arguments (format string and input char)
+  // @TODO: Call "scanf" std function
+  // @TODO: Get the value of "index" global variable
+  // @TODO: Compute the offset of "cells" array based on "index"
+  // @TODO: Save the temporary variable at address "cells[index]" (no operation, just overwrite)
+}
+</pre>
+
+
+<p>The <code>OutputExpr</code> expression is simply a call to <code>printf</code> C function:</p>
+
+<pre>
+void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Get the value of "index" global variable
+  // @TODO: Compute the offset of "cells" array based on "index"
+  // @TODO: Load the offset address from "cells"
+  // @TODO: Prepare arguments (format string and the current cell value)
+  // @TODO: Call "printf" std function
+}
+</pre>
+
+
+<p>The <code>Loop</code> expression is more complex since the comportment will depend of current cell value, like enter the loop if the current cell value is greater to zero and exit if this value if equal to zero. If we need to make choice depending to value (at runtime), we need to use <em>block</em> and <em>branches</em>.</p>
+
+<p>A block is simply instructions that we separate to other piece of code, we can <em>jump</em> to the block, skip it or even loop by calling it at the end of itself. Since block is a basis of LLVM IR code structure, they are referred as <code>Basic blocks</code> and are so useful that every function (like the <code>main</code> one) starts with a block.</p>
+
+<p>In some way, blocks are like function, we can call them (using <em>branches</em>) but we can't pass argument to it, therefore variables created before the branch is made are still accessible.</p>
+
+<p>Branches are equally useful since a block must be call by a branch (except the first block of a function, called <code>EntryBlock</code>) and must finish by a branch or a <code>ret</code> (return, to exit a function) instruction. Branches can be <em>conditional</em> and <em>direct</em>.</p>
+
+<p>Basic blocks are constructed like so:</p>
+
+<pre>
+  ; Previous instructions
+  br %BlockName ; Direct branching to "BlockName"
+
+LoopBlock:
+  ; Loop instructions
+  %result = icmp eq i32 %i, 0 ; CoMPare as Int (icmp with int32) if %i is EQual (eq) to 0, %i equal 1 (true), else 0 (false)
+  br i1 %result, label %DoneBlock, label %LoopBlock ; If %result (boolean, of type int1) is true, branch to DoneBlock, else to LoopBlock
+
+DoneBlock:
+  ; Next instructions
+</pre>
+
+
+<p>For out <code>Loop</code> expression to work correctly, we need to check <em>before</em> entering the loop if the current cell value is greater than 0 (Signed Greater Than, or <code>sgt</code> of LLVM) and checking at the end of the loop is the value is equal to 0 to exit the loop. We can resume the structure our loop to:</p>
+
+<pre>
+  ; Previous instructions of our program
+  br %StartLoopBlock
+
+StartLoopBlock:
+  ; @TODO: Load current cell value and put it into %value
+  %enterLoop = icmp sgt i32 %value, 0 ; if (%value > 0), enter the loop, else skip the loop
+  br i1 %enterLoop, label %LoopBlock, label %EndLoopBlock
+
+LoopBlock:
+  ; Loop instructions
+  ; @TODO: Load current cell value and put it into %value
+  br %StartLoopBlock ; Restart the loop (will exit if current cell value > 0)
+
+EndLoopBlock:
+  ; Next instructions of our program
+</pre>
+
+
+<p>Note: a block must existing before branching to it. It's generally more clear to add the branching instruction <em>before</em> adding instructions to it. For example, the following branching:</p>
+
+<pre>
+  ; Previous instructions
+  br %MyBlock
+
+MyBlock:
+  %3 = add %1, %2; Dummy addition for example
+  br %MyBlock2
+
+MyBlock2:
+  ; Next instructions
+</pre>
+
+
+<p>will be decomposed as follow from API:</p>
+
+<pre>
+// Create "MyBlock" block
+// Add branch to "MyBlock"
+// Add "add" instruction into "MyBlock"
+// Create "MyBlock2" block
+// Add branch to "MyBlock2"
+</pre>
+
+
+<p>We update our <code>CodeGen</code> function comments:</p>
+
+<pre>
+void LoopExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // @TODO: Create the "StartLoop" block
+  // @TODO: Create branch to "StartLoop"
+
+  // @TODO: Get the value of "index" global variable
+  // @TODO: Compute the offset of "cells" array based on "index"
+  // @TODO: Compare current cell value with zero
+
+  // @TODO: Create the "Loop" block
+  // @TODO: Create the "EndLoop" block
+  // @TODO: Create conditional branch to %LoopBlock or %EndLoopBlock
+
+  // @TODO: Generate instructions from |_exprs|
+  // @TODO: Restart loop
+}
+</pre>
+
+
+<p>To create a global variable, with need to specify the type and the initialisation value:</p>
+
+<pre>
+Module *M = // Default module
+LLVMContext &C = M->getContext(); // Get the current context (an opaque part of LLVM that contains state about the program execution)
+
+Type *Ty = Type::getInt32Ty(C); // 32 bits integer type
+const APInt Zero = APInt(32, 0); // 32 bits integer with value zero
+Constant *InitK = Constant::getIntegerValue(Ty, Zero); // Create a constant with the int32 value zero
+__BrainF_IndexPtr = new GlobalVariable(*M, // Use default module
+                                       Ty, // 32 bits integer
+                                       false, // non-constant
+                                       GlobalValue::WeakAnyLinkage, // Keep one copy when linking (weak)
+                                       InitK, // Initialise with constant zero
+                                       "brainf.index" // Call this global variable "brainf.index"
+                                       );
+</pre>
+
+
+<p>And since with will use it as global variable into our program, we will declare it static:</p>
+
+<pre>
+static GlobalVariable *__BrainF_IndexPtr = NULL;
+</pre>
+
+
+<p>and be sure that we initialise it only once:</p>
+
+<pre>
+if (!__BrainF_IndexPtr) {
+  // Initialisation goes here
+}
+</pre>
+
+
+<p>For the cells array, it's the same way but we need the declare the exact size of it. Hundred cells seem correct for most programs:</p>
+
+<pre>
+#define kCellsCount 100
+ArrayType *ArrTy = ArrayType::get(Type::getInt32Ty(C), kCellsCount); // An array type of 100 x int32
+std::vector<Constant *> constants(kCellsCount, B.getInt32(0)); // Create a vector of 100 items equal to 0
+ArrayRef<Constant *> Constants = ArrayRef<Constant *>(constants); // Create an array of 100 constants equal to 0
+Constant *InitPtr = ConstantArray::get(ArrTy, Constants); // Create a pointer to this global array
+__BrainF_CellsPtr = new GlobalVariable(*M, // Use default module
+                                       ArrTy, // an array of 100 x int32
+                                       false, // non-constant
+                                       GlobalValue::WeakAnyLinkage, // Keep one copy when linking (weak)
+                                       InitPtr, // Initialise with the array
+                                       "brainf.cells" // Call this global variable "brainf.cells"
+                                       );
+</pre>
+
+
+<p>And we need to also declare it:</p>
+
+<pre>
+static GlobalVariable *__BrainF_CellsPtr = NULL;
+</pre>
+
+
+<p>and be sure that we initialise it only once:</p>
+
+<pre>
+if (!__BrainF_CellsPtr) {
+  // Initialisation goes here
+}
+</pre>
+
+
+<p>Now that <code>__BrainF_IndexPtr</code> and <code>__BrainF_CellsPtr</code> are pointer to respectively int32 and [100 x int32], we need to do some work to get the value.
+For the <code>__BrainF_IndexPtr</code>, it's simply a pointer to int32, noted <code>*int32</code>. To read it, we need the <code>load</code> instruction, the result will be the value that the pointer contains (i.e.: the value stored in memory at this address).
+In IR, this gives:</p>
+
+<pre>
+%index = load %brainf.index
+</pre>
+
+
+<p>And with LLVM API, this is:</p>
+
+<pre>
+IRBuilder<> &B = // Use current builder
+Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
+</pre>
+
+
+<p>The save operation is simple: put a value at the pointer but there is a catch, the value <em>must</em> be of the same type that the base pointer type. For example, you have to save a <code>int32</code> into a <code>*int32</code>, you can't save a <code>int8</code> or <code>int64</code> into it, you have to cast the value. Without casting, an assert will be thrown when executing the bitcode.</p>
+
+<p>The save operation is done with the store instruction (which returns nothing):</p>
+
+<pre>
+store %index, %brainf.index ; OK, %index is int32 and %brainf.index is *int32
+</pre>
+
+
+<p>And with LLVM API, this is:</p>
+
+<pre>
+// Get value for "brainf.index"
+Value *IdxV = B.CreateLoad(__BrainF_IndexPtr); // %1 = load %brainf.index
+
+// Add 10 to |IdxV|
+Value *NewIdxV = B.CreateAdd(IdxV, B.getInt32(10)); // %2 = add int32 %1, 10
+
+// Save it back
+B.CreateStore(IdxV, __BrainF_IndexPtr); // store %2, %brain.index
+</pre>
+
+
+<p>Now, the value of <code>brainf.index</code> is 10, and the <code>ShiftExpr</code> simply becomes:</p>
+
+<pre>
+void ShiftExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  // Get the value of "index" global variable
+  Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
+
+  // Create a temporary variable that contains the "index" + |_step| result
+  Value *ResV = B.CreateAdd(IdxV, B.getInt32(_step));
+
+  // Save the "index" global variable
+  B.CreateStore(ResV, __BrainF_IndexPtr);
+}
+</pre>
+
+
+<p>We now need to access to cells.</p>
+
+<p>It's really important to note that <code>__BrainF_CellsPtr</code> is <em>a pointer to an array</em> (since we create a global variable), for LLVM it's a <code>[i32 x 100]*</code>. To access to the <em>3rd element</em> of this array, we will use the <code>Get Element Pointer</code> method (generally noted as <code>GEP</code>). This computes the memory offset that we need to access a specific element of an array but it's <em>really important</em> to note that this method <em>never access to memory</em>, it only do some calculation (that we can of course also do by our own). The idea is simple: from a pointer, we provide an array of integer of offsets to access to a specific element.</p>
+
+<p>In our example, we've got a pointer to an array, if we need to access to the <em>3rd element</em>, we need two steps:</p>
+
+<ul>
+<li>Convert pointer to array to get <code>[i32 x 100]*</code> to <code>[i32 x 100]</code>: offset 0</li>
+<li>Get the 3rd element from this array <code>[i32 x 100]+3</code> : offset 3
+Our offsets array is <code>[0, 3]</code> and the final instruction <code>%third_element = getelementptr %brainf.index, 0, 3</code></li>
+</ul>
+
+
+<p>With LLVM API, this gives:</p>
+
+<pre>
+ArrayRef<Value *> IdxsArr((Value* []){B.getInt32(0), B.getInt32(3)}); // Create the array of offsets: [0, 3]
+Value *CellPtr = B.CreateGEP(__BrainF_CellsPtr, IdxsArr); // %cell = getelementptr %brainf.index, 0, 3
+</pre>
+
+
+<p>Since <code>getelementptr</code> doesn't acces to any memory (it only computes memory final address), it returns also a pointer to the 3rd element.</p>
+
+<p>We obviously need to <code>load</code> the pointer to access to the integer value:</p>
+
+<pre>
+Value *CellV = B.CreateLoad(CellPtr);
+</pre>
+
+
+<p>And to change the cell value, we just need to save the new value at <code>CellPtr</code> using the <code>store</code> instruction:</p>
+
+<pre>
+void IncrementExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  LLVMContext &C = M->getContext();
+
+  // Get the value of "index" global variable
+  Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
+
+  // Compute the offset of "cells" array based on "index"
+  ArrayRef<Value *> IdxsArr((Value* []){B.getInt32(0), IdxV});
+  Value *CellPtr = B.CreateGEP(__BrainF_CellsPtr, IdxsArr);
+
+  // Load the offset address from "cells"
+  Value *CellV = B.CreateLoad(CellPtr);
+
+  // Create a temporary variable that contains the "cells[index]" + |_increment| result
+  Value *ResV = B.CreateAdd(CellV, B.getInt32(_increment))
+
+  // Save the temporary variable at address "cells[index]"
+  B.CreateStore(ResV, CellPtr);
+}
+</pre>
+
+
+<p>For the <code>InputExpr</code>, we will use <code>scanf</code> c-function. For this, we need the format string <code>"%d"</code>, to get the <code>scanf</code> standard function and to call it.</p>
+
+<p>To create a string, <code>"%d"</code> in this case, for the <code>scanf</code> function, the only way is to create a global constant. LLVM API provide a convenient function for that from the IRBuilder <code>B</code>: <code>B.CreateGlobalString("%d", "brainf.scanf.format");</code>, since it a global constant, it name should be explicit, like "brainf.scanf.format".</p>
+
+<p>This constant should be unique, every time we call this function, this create a new global constant ("brainf.scanf.format2", "brainf.scanf.format3", etc.), we can use a static variable to ensure we create only one global constant:</p>
+
+<pre>
+static Value *GScanfFormat = NULL;
+if (!GScanfFormat) {
+  GScanfFormat = B.CreateGlobalString("%d", "brainf.scanf.format");
+}
+</pre>
+
+
+<p>To call an existing function, we need to get the exact type first. In our case, the <code>scanf</code> prototype is, for LLVM, as: <code>i32 scanf(i8*, …)</code>. It's a function that takes a variable number of argument (also called "vaarg"), the first argument is a <em>pointer to 8 bit integer</em> (<code>i8*</code>) an returns a <em>32 bit integer</em> (<code>i32</code>).</p>
+
+<pre>
+Type* ScanfArgs[] = { Type::getInt8PtrTy(C) };
+FunctionType *ScanfTy = FunctionType::get(Type::getInt32Ty(C), // Returns i32
+                                          ScanfArgs, // First argument is i8* argument
+                                          true // This function contains variable number of arguments
+                                          );
+</pre>
+
+
+<p>As a standard function, <code>scanf</code> is automatically accessible by LLVM API, we just need the name and the correct function type:</p>
+
+<pre>
+Function *ScanfF = cast<Function>(M->getOrInsertFunction("scanf", ScanfTy)); // Find "scanf" function
+</pre>
+
+
+<p>Once we have got the function and arguments, we just need to call it. With <code>B.CreateCall2([function], [arg 1], [arg 2])</code>, we can translate our C program <code>scanf("%d", &amp;i)</code> to that using LLVM API:</p>
+
+<pre>
+Value *IntPtr = B.CreateAlloca(Type::getInt32Ty(C)); // Allocate memory to "i"
+B.CreateCall2(ScanfF, // Call "scanf" function with 2 arguments
+              CastToCStr(GScanfFormat, B), // First argument: the format string
+              IntPtr // Second argument: the int pointer (i32*) to save the entered value
+              );
+</pre>
+
+
+<p>Note: As <code>B.CreateAlloc([type])</code> returns a pointer (the memory address), we don't need extra instruction for <code>scanf</code>, it the same that C example: <code>int * i = (int *)malloc(sizeof(int))</code> but it's important to note that <code>CreateAlloc</code> will only use stack memory (as local variable) and so, will be destroy when the function exits.</p>
+
+<p>Note 2: <code>CastToCStr(GScanfFormat, B)</code> is used to convert <code>[i8 x 3]</code> to <code>i8*</code> (null-terminated c-string), as the <code>scanf</code> function required.</p>
+
+<p>Let's code now:</p>
+
+<pre>
+void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  LLVMContext &C = M->getContext();
+
+  // Prepare arguments (format string and input char)
+  static Value *GScanfFormat = NULL;
+  if (!GScanfFormat) {
+    GScanfFormat = B.CreateGlobalString("%d", "brainf.scanf.format");
+  }
+  Value *IntPtr = B.CreateAlloca(Type::getInt32Ty(C));
+
+  // Call "scanf" std function
+  Type* ScanfArgs[] = { Type::getInt8PtrTy(C) };
+  FunctionType *ScanfTy = FunctionType::get(Type::getInt32Ty(C), // Returns i32
+                                            ScanfArgs, // Passes char* (i8*) argument
+                                            true // This function contains variable argument count (also called "vaarg" function)
+                                            );
+  Function *ScanfF = cast<Function>(M->getOrInsertFunction("scanf", ScanfTy)); // Find "scanf" function
+  B.CreateCall2(ScanfF, // Call "scanf" function with 2 arguments
+                CastToCStr(GScanfFormat, B), // First argument: the format string
+                IntPtr // Second argument: the int pointer (i32*) to save the entered value
+                );
+
+  // Get the value of "index" global variable
+  Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
+
+  // Compute the offset of "cells" array based on "index"
+  ArrayRef<Value *> IdxsArr((Value* []){B.getInt32(0), IdxV});
+  Value *CellPtr = B.CreateGEP(__BrainF_CellsPtr, IdxsArr);
+
+  // Save the temporary variable at address "cells[index]" (no operation, just overwrite)
+  Value *IntV = B.CreateLoad(IntPtr); // load the int pointer (i32*) to int value (i32)
+  B.CreateStore(IntV, CellPtr);
+}
+</pre>
+
+
+<p>As the same that <code>InputExpr</code>, the <code>OutputExpr</code> will call a C standard function, <code>printf</code> in this case. This is the same way to do it.</p>
+
+<pre>
+void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  LLVMContext &C = M->getContext();
+
+  // Prepare arguments (format string and the current cell value)
+  static Value *GPrintfFormat = NULL;
+  if (!GPrintfFormat) {
+    GPrintfFormat = B.CreateGlobalString("%c", "brainf.printf.format");
+  }
+
+  // Get the value of "index" global variable
+  Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
+
+  // Compute the offset of "cells" array based on "index"
+  ArrayRef<Value *> IdxsArr((Value* []){B.getInt32(0), IdxV});
+  Value *CellPtr = B.CreateGEP(__BrainF_CellsPtr, IdxsArr);
+
+  // Load the offset address from "cells"
+  Value *CellV = B.CreateLoad(CellPtr);
+  
+  // Call "printf" std function
+  Type* PrintfArgs[] = { Type::getInt8PtrTy(C) };
+  FunctionType *PrintfTy = FunctionType::get(Type::getInt32Ty(C), // Returns i32
+                                             PrintfArgs, // Passes char* (i8*) argument
+                                             true // "vaarg" function 
+                                             );
+  Function *PrintfF = cast<Function>(M->getOrInsertFunction("printf", PrintfTy)); // Find "printf" function
+  B.CreateCall2(PrintfF, // Call "printf" function with 2 arguments
+                CastToCStr(GPrintfFormat, B), // First argument: the format string
+                CellV // Second argument: the value to print
+                );
+}
+</pre>
+
+
+<p>For <code>LoopExpr</code>, we need to know how to create and use basic blocks. From our skeleton of comment, we need to create two blocks and branch to them:</p>
+
+<pre>
+// Create "MyBlock" block
+// Add branch to "MyBlock"
+// Add "add" instruction into "MyBlock"
+// Create "MyBlock2" block
+// Add branch to "MyBlock2"
+</pre>
+
+
+<p>To create a block, we need the current function (remember that a block is always attached to a function) and the current context.</p>
+
+<pre>
+// Get the current context
+LLVMContext &C = M->getContext();
+// Get the current function (if we don't have any reference already)
+Function *F = B.GetInsertBlock()->getParent();
+// Create the block "MyBlock" to function "F" in to the default context "C"
+BasicBlock *MyBlockBB = BasicBlock::Create(C, "MyBlock", F);
+// Insert the block "MyBlock" into the current function
+B.SetInsertPoint(MyBlockBB);
+</pre>
+
+
+<p>To add instruction to a created block, with need to create a <em>builder</em> with the <code>IRBuilder</code> template from the block:</p>
+
+<pre>
+IRBuilder<> MyBlockB(MyBlockBB);
+Value *ResV = MyBlockB.CreateAdd(MyBlockB.getInt32(1), MyBlockB.getInt32(2)); // ResV = 1 + 2
+</pre>
+
+
+<p>Now, to <em>branch</em> to a block, we've got the <em>direct branch</em> and <em>conditional branch</em>:</p>
+
+<pre>
+// Branch directly to "MyBlock"
+B.CreateBr(MyBlockBB);
+</pre>
+
+
+<p>Note: We branch to a <code>BasicBlock</code>, not a <code>IRBuilder&lt;&gt;</code> and we can only branch from outside the block, in this case, we branch from the previous block with the <code>B</code> builder.</p>
+
+<p>To conditionally branch, we of course need a condition (a predicate, true or false):</p>
+
+<pre>
+// Compare Integers (ICmp): is 3 an Int Signed Greater Than (ICmpSGT) one?
+Value *ThreeSGZeroCond = B.CreateICmpSGT(B.getInt32(3),
+                                         B.getInt32(1));
+// If the condition |ThreeSGZeroCond| is true, branch to |MyBlockBB|, else to |AnotherBlockBB|
+B.CreateCondBr(ThreeSGZeroCond, MyBlockBB, AnotherBlockBB);
+</pre>
+
+
+<p>For this case, the code is:</p>
+
+<pre>
+void LoopExpr::CodeGen(Module *M, IRBuilder<> &B)
+{
+  LLVMContext &C = M->getContext();
+
+  // Create the StartLoop block
+  Function *F = B.GetInsertBlock()->getParent();
+  BasicBlock *StartBB = BasicBlock::Create(C, "LoopStart", F);
+
+  // Create branch to StartLoop
+  B.CreateBr(StartBB);
+  
+  // Get the value of "index" global variable
+  Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
+
+  // Compute the offset of "cells" array based on "index"
+  ArrayRef<Value *> IdxsArr((Value* []){B.getInt32(0), IdxV});
+  Value *CellPtr = B.CreateGEP(__BrainF_CellsPtr, IdxsArr);
+
+  B.SetInsertPoint(StartBB);
+  IRBuilder<> StartB(StartBB);
+
+  // Compare current cell value with zero
+  Value *SGZeroCond = StartB.CreateICmpSGT(StartB.CreateLoad(CellPtr),
+                                           StartB.getInt32(0)); // is cell Signed Int Greater than Zero?
+
+  // Create the Loop block
+  BasicBlock *LoopBB = BasicBlock::Create(C, "LoopBody", F);
+
+  // Create the EndLoop block
+  BasicBlock *EndBB = BasicBlock::Create(C, "LoopEnd", F);
+
+  // Create conditional branch to LoopBlock or EndLoopBlock
+  StartB.CreateCondBr(SGZeroCond, LoopBB, EndBB);
+
+  B.SetInsertPoint(LoopBB);
+  IRBuilder<> LoopB(LoopBB);
+
+  // Generate instructions from |_exprs|
+  for (std::vector<Expr *>::iterator it = _exprs.begin(); it != _exprs.end(); ++it) {
+    (*it)->CodeGen(M, LoopB);
+  }
+  LoopB.CreateBr(StartBB); // Restart loop (will next exit if current cell value > 0)
+
+  B.SetInsertPoint(EndBB);
+}
+</pre>
+
+
+<p>We need to update our main function to call the parser method:</p>
+
+<p>BrainF.h:</p>
+
+<pre>
+#ifndef BRAIN_F_H
+#define BRAIN_F_H
+
+++ #include "llvm/ExecutionEngine/SectionMemoryManager.h"
+++ #include "llvm/ExecutionEngine/ExecutionEngine.h"
+++ #include "llvm/ExecutionEngine/GenericValue.h"
+++ #include "llvm/ExecutionEngine/MCJIT.h"
+
+++ #include "llvm/Support/ManagedStatic.h"
+++ #include "llvm/Support/TargetSelect.h"
+++ #include "llvm/Support/raw_ostream.h"
+
+++ #include "llvm/IR/LLVMContext.h"
+++ #include "llvm/IR/IRBuilder.h"
+++ #include "llvm/IR/Module.h"
+++ #include "llvm/IR/Value.h"
+
+#include &lt;iostream&gt;
+#include &lt;vector&gt;
+
+#include "Parser.h"
+
+#endif // BRAIN_F_H
+</pre>
+
+
+<p>BrainF.cpp:</p>
+
+<pre>
+#include "BrainF.h"
+
+using namespace llvm;
+
+int main(int argc, char *argv[])
+{
+++   // Not so dummy BrainF**k program
+++   std::string s = ">++++++++[<+++++++++>-]<.>>+>+>++>[-]+<[>[->+<<++++>]<<]>.+++++++..+++.>>+++++++.<<<[[-]<[-]>]<+++++++++++++++.>>.+++.------.--------.>>+.>++++.";
+     Parser parser(s);
+  
+++   // Create the context and the module
+++   LLVMContext &C = getGlobalContext();
+++   ErrorOr&lt;Module *&gt; ModuleOrErr = new Module("my test", C);
+++   std::unique_ptr&lt;Module&gt; Owner = std::unique_ptr&lt;Module&gt;(ModuleOrErr.get());
+++   Module *M = Owner.get();
+
+++   // Create the main function: "i32 @main()"
+++   Function *MainF = cast&lt;Function&gt;(M-&gt;getOrInsertFunction("main", // Called "main"
+++                                                           Type::getInt32Ty(C), // Returns an int (i32)
+++                                                           (Type *)0) // Takes no arguments
+++                                                           )
+++   // Create the entry block
+++   BasicBlock *BB = BasicBlock::Create(C,
+++                                       "EntryBlock", // Conventionnaly called "EntryBlock"
+++                                       MainF // Add it to "main" function
+++                                       );
+++   IRBuilder&lt;&gt; B(BB); // Create a builder to add instructions
+++   B.SetInsertPoint(BB); // Insert the block to function
+
+++   // Generate IR code from parser
+++   parser.CodeGen(M, B);
+
+++   B.CreateRet(B.getInt32(0)); // Return 0 to the "main" function
+
+++   // Print (dump) the module
+++   M-&gt;dump();
+
+++   // Default initialisation
+++   InitializeNativeTarget();
+++   InitializeNativeTargetAsmPrinter();
+++   InitializeNativeTargetAsmParser();
+
+++   // Create the execution engine
+++   std::string ErrStr;
+++   EngineBuilder *EB = new EngineBuilder(std::move(Owner));
+++   ExecutionEngine *EE = EB-&gt;setErrorStr(&ErrStr)
+++     .setMCJITMemoryManager(std::unique_ptr&lt;SectionMemoryManager&gt;(new SectionMemoryManager()))
+++     .create();
+
+++   if (!ErrStr.empty()) {
+++     std::cout &lt;&lt; ErrStr &lt;&lt; "\n";
+++     exit(0);
+++   }
+
+++   // Finalize the execution engine before use it
+++   EE-&gt;finalizeObject();
+
+++   // Run the program
+++   std::vector&lt;GenericValue&gt; Args(0); // No args
+++   EE-&gt;runFunction(MainF, // Called "main",
+++                   Args); // with no arguments
+
+++   std::cout &lt;&lt; "\n" &lt;&lt; "=== Program Output ===" &lt;&lt; "\n";
+++   std::vector&lt;GenericValue&gt; Args(0); // No args
+++   EE-&gt;runFunction(MainF, Args);
+
+++   // Clean up and shutdown
+++   delete EE;
+++   llvm_shutdown();
+  
+  return 0;
+}
+</pre>
+
+
+<p><a href="./BF%20(Parser%20+%20Compiler%20LLVM)/">Code source</a></p>
+
+<p>To compile this:</p>
+
+<pre>
+clang++ -Wall Expr.cpp CodeGen.cpp Parser.cpp BrainF.cpp `llvm-config --cxxflags --ldflags --system-libs --libs core mcjit native nativecodegen` DebugDescription.cpp -o BrainF
+</pre>
+
+
+<p>Or with a Makefile format:</p>
+
+<pre>
+CC=clang++
+CFLAGS=-Wall # Display all warning
+SRCS=Expr.cpp CodeGen.cpp Parser.cpp BrainF.cpp DebugDescription.cpp
+TARGET= BrainF
+CONFIG=`llvm-config --cxxflags --ldflags --system-libs --libs core mcjit native nativecodegen`
+
+all: build
+
+build: $(SRCS)
+    $(CC) $(CFLAGS) $(SRCS) $(CONFIG) -o $(TARGET)
+
+run: $(TARGET)
+    ./$(TARGET)
+</pre>
+
+
+<p>Then run our command:</p>
+
+<pre>
+$ make build run
+</pre>
+
+
+<p>At last, we've got our "hello, world!" from our LLVM compiler!</p>
+</body>
+</html>
