@@ -1361,14 +1361,15 @@ Function *ScanfF = cast<Function>(M->getOrInsertFunction("scanf", ScanfTy)); // 
 </pre>
 
 
-<p>Once we have got the function and arguments, we just need to call it. With <code>B.CreateCall2([function], [arg 1], [arg 2])</code>, we can translate our C program <code>scanf("%d", &amp;i)</code> to that using LLVM API:</p>
+<p>Once we have got the function and arguments, we just need to call it. With <code>B.CreateCall([function], [array of args])</code>, we can translate our C program <code>scanf("%d", &amp;i)</code> to that using LLVM API:</p>
 
 <pre>
 Value *IntPtr = B.CreateAlloca(Type::getInt32Ty(C)); // Allocate memory to "i"
-B.CreateCall2(ScanfF, // Call "scanf" function with 2 arguments
-              CastToCStr(GScanfFormat, B), // First argument: the format string
-              IntPtr // Second argument: the int pointer (i32*) to save the entered value
-              );
+Value* Args[] = {
+  CastToCStr(GScanfFormat, B), // First argument: the format string
+  IntPtr }; // Second argument: the int pointer (i32*) to save the entered value
+ArrayRef<Value *> ArgsArr(Args);
+B.CreateCall(ScanfF, ArgsArr); // Call "scanf" function with 2 arguments
 </pre>
 
 
@@ -1397,11 +1398,14 @@ void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
                                             true // This function contains variable argument count (also called "vaarg" function)
                                             );
   Function *ScanfF = cast<Function>(M->getOrInsertFunction("scanf", ScanfTy)); // Find "scanf" function
-  B.CreateCall2(ScanfF, // Call "scanf" function with 2 arguments
-                CastToCStr(GScanfFormat, B), // First argument: the format string
-                IntPtr // Second argument: the int pointer (i32*) to save the entered value
-                );
-
+  
+  // Call "scanf"
+  Value* Args[] = {
+    CastToCStr(GScanfFormat, B), // First argument: the format string
+    IntPtr }; // Second argument: the int pointer (i32*) to save the entered value
+  ArrayRef<Value *> ArgsArr(Args);  
+  B.CreateCall(ScanfF, ArgsArr); // Call "scanf" function with 2 arguments
+  
   // Get the value of "index" global variable
   Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
 
@@ -1446,10 +1450,13 @@ void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
                                              true // "vaarg" function 
                                              );
   Function *PrintfF = cast<Function>(M->getOrInsertFunction("printf", PrintfTy)); // Find "printf" function
-  B.CreateCall2(PrintfF, // Call "printf" function with 2 arguments
-                CastToCStr(GPrintfFormat, B), // First argument: the format string
-                CellV // Second argument: the value to print
-                );
+  
+  // Call "printf"
+  Value* Args[] = {
+    CastToCStr(GPrintfFormat, B), // First argument: the format string
+    B.CreateLoad(CellPtr) }; // Second argument: the value to print
+  ArrayRef<Value *> ArgsArr(Args);
+  B.CreateCall(PrintfF, Args); // Call "printf" function with 2 arguments
 }
 </pre>
 
