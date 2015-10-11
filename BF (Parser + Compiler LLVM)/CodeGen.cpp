@@ -49,8 +49,8 @@ void ShiftExpr::CodeGen(Module *M, IRBuilder<> &B)
 
 void IncrementExpr::CodeGen(Module *M, IRBuilder<> &B)
 {
-  Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
-  ArrayRef<Value *> IdxsArr((Value* []){B.getInt32(0), IdxV});
+  Value* Idxs[] = { B.getInt32(0), B.CreateLoad(__BrainF_IndexPtr) };
+  ArrayRef<Value *> IdxsArr(Idxs);
   Value *CellPtr = B.CreateGEP(__BrainF_CellsPtr, IdxsArr);
   // Load cell value
   Value *CellV = B.CreateLoad(CellPtr);
@@ -80,10 +80,10 @@ void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
   Value *IntPtr = B.CreateAlloca(Type::getInt32Ty(C));
   
   // Call "scanf"
-  B.CreateCall2(ScanfF,
-                CastToCStr(GScanfFormat, B),
-                IntPtr);
-  
+  Value* Args[] = { CastToCStr(GScanfFormat, B), IntPtr };
+  ArrayRef<Value *> ArgsArr(Args);
+  B.CreateCall(ScanfF, ArgsArr);
+	
   Value *IdxV = B.CreateLoad(__BrainF_IndexPtr);
   Value *CellPtr = B.CreateGEP(B.CreatePointerCast(__BrainF_CellsPtr,
                                                    Type::getInt32Ty(C)->getPointerTo()), // Cast to int32*
@@ -114,9 +114,9 @@ void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
                                IdxV);
   
   // Call "printf"
-  B.CreateCall2(PrintfF,
-                CastToCStr(GPrintfFormat, B),
-                B.CreateLoad(CellPtr));
+  Value* Args[] = { CastToCStr(GPrintfFormat, B), B.CreateLoad(CellPtr) };
+  ArrayRef<Value *> ArgsArr(Args);
+  B.CreateCall(PrintfF, ArgsArr);
 }
 
 

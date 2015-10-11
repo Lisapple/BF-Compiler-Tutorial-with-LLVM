@@ -5,7 +5,7 @@ BrainF**k Compiler Tutorial with LLVM
 
 [HTML format](BrainF**k.html)
 
-Required LLVM 3.6.
+Tested with LLVM 3.6.2, 3.7.0 and 3.8-r246024.
 
 The code source and resources are under MIT licence.
 

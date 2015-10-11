@@ -7,7 +7,7 @@ CONFIG=`llvm-config --cxxflags --ldflags --system-libs --libs core mcjit native 
 all: build
 
 build: $(SRCS)
-	$(CC) $(SRCS) $(CONFIG) -o $(TARGET)
+	$(CC) $(CFLAGS) $(SRCS) $(CONFIG) -o $(TARGET)
 
 run: $(TARGET)
 	./$(TARGET)
