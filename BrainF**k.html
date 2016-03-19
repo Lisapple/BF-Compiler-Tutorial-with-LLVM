@@ -1345,7 +1345,7 @@ if (!GScanfFormat) {
 </pre>
 
 
-<p>To call an existing function, we need to get the exact type first. In our case, the <code>scanf</code> prototype is, for LLVM, as: <code>i32 scanf(i8*, …)</code>. It's a function that takes a variable number of argument (also called "vaarg"), the first argument is a <em>pointer to 8 bit integer</em> (<code>i8*</code>) an returns a <em>32 bit integer</em> (<code>i32</code>).</p>
+<p>To call an existing function, we need to get the exact type first. In our case, the <code>scanf</code> prototype is, for LLVM, as: <code>i32 scanf(i8*, ...)</code>. It's a function that takes a variable number of argument (also called "vaarg"), the first argument is a <em>pointer to 8 bit integer</em> (<code>i8*</code>) an returns a <em>32 bit integer</em> (<code>i32</code>). This is the LLVM IR equavalent to C declaration: <code>int scanf(const char *, ...)</code>, LLVM is aware of the <code>const</code> attribute for first argument but this not appears in the IR code (same goes for the <code>restrict</code> attribute, from C99).</p>
 
 <pre>
 Type* ScanfArgs[] = { Type::getInt8PtrTy(C) };
