@@ -888,6 +888,7 @@ run: BrainF
 <li>indentation are created with two white-spaces (not a tab)</li>
 <li>each line of code should not be more than 85 columns long</li>
 <li>variables should be short, begins with an Uppercase letter and ends with the few first letters of the type; for example a Variable can be called "CountV" and a Type "IntTy"</li>
+<li>In comments, variables names are written with <code>|</code>, like <code>|varName|</code></li>
 </ul>
 
 
@@ -917,7 +918,7 @@ IRBuilder<> LoopB(LoopBB);
 
 <p>We now update our <code>XXXExpr::CodeGen</code> method to pass the module and the IR Builder to generate IR code.</p>
 
-<p><code>llvm:Module</code> contains informations about locals and globals variables, functions, etc.</p>
+<p><code>llvm:Module</code> contains informations about locals and globals variables, functions, etc. We will only use a single module in our parser.</p>
 
 <p><code>llvm::IRBuilder&lt;&gt;</code> is a template to add instructions to the current module.</p>
 
@@ -965,10 +966,10 @@ void LoopExpr::CodeGen(Module *M, IRBuilder<> &B)
 <pre>
 void Parser::CodeGen(Module *M, IRBuilder<> &B)
 {
-  // @TODO: Create "index" global variable
-  // @TODO: Initialise "index" global variable
-  // @TODO: Create "cells" global variable
-  // @TODO: Initialise "cells" global variable
+  // @TODO: Create |index| global variable
+  // @TODO: Initialise |index| global variable
+  // @TODO: Create |cells| global variable
+  // @TODO: Initialise |cells| global variable
 
   // Recursively generate code
   for (std::vector<Expr *>::iterator it = _exprs.begin(); it != _exprs.end(); ++it) {
@@ -981,17 +982,17 @@ void Parser::CodeGen(Module *M, IRBuilder<> &B)
 <p>For the <code>Shift</code> expression, it simple but we need to decompose each part. To change the value of a variable, the computer need 3 steps:</p>
 
 <ul>
-<li><p>Load the value at the given address (the pointer of the "index" global variable)</p></li>
-<li><p>Create a temporary variable to store the result of the operation ("index" + "step")</p></li>
-<li><p>Save the temporary variable value at the "index" address</p></li>
+<li><p>Load the value at the given address (the pointer of the <code>|index|</code> global variable)</p></li>
+<li><p>Create a temporary variable to store the result of the operation: <code>|index| + |step|</code></p></li>
+<li><p>Save the temporary variable value at the <code>|index|</code> address</p></li>
 </ul>
 
 
 <pre>
 void ShiftExpr::CodeGen(Module *M, IRBuilder<> &B)
 {
-  // @TODO: Get the value of "index" global variable
-  // @TODO: Create a temporary variable that contains the "index" + |_step| result
+  // @TODO: Get the value of |index| global variable
+  // @TODO: Create a temporary variable that contains the |index| + |_step| result
   // @TODO: Save the "index" global variable
 }
 </pre>
@@ -1002,29 +1003,30 @@ void ShiftExpr::CodeGen(Module *M, IRBuilder<> &B)
 <p>It should be easy for you now to understand this basic IR code (all variables start with "%"):</p>
 
 <pre>
-%index = load %index_addr ; Load the address from (the given) "index_addr" to "index" (created)
-%temp = add %index, 1    ; Create "temp" variable with the result of "index" + 1
-store %temp, %index_addr ; Save (store) the value of "temp" at address "index_addr"
+; This is a comment
+%index = load %index_addr ; Load the address from (the given) |index_addr| to |index| (created)
+%temp = add %index, 1    ; Create |temp| variable with the result of |index| + 1
+store %temp, %index_addr ; Save (store) the value of |temp| at address |index_addr|
 </pre>
 
 
-<p>The <code>IncrementExpr</code> uses the same principle but this time, we need to load "index" first to get the value from "cells" at a specific index, the "index" value (the name makes sense now!).</p>
+<p>The <code>IncrementExpr</code> uses the same principle but this time, we need to load "index" first to get the value from "cells" at a specific index, the <code>|index|</code> value (the name makes sense now!).</p>
 
 <p>Once we've got "index", we need to compute the offset to get the cell value, load it, create a temporary variable to store the addition then save it back:</p>
 
 <pre>
 void IncrementExpr::CodeGen(Module *M, IRBuilder<> &B)
 {
-  // @TODO: Get the value of "index" global variable
-  // @TODO: Compute the offset of "cells" array based on "index"
-  // @TODO: Load the offset address from "cells"
-  // @TODO: Create a temporary variable that contains the "cells[index]" + |_step| result
-  // @TODO: Save the temporary variable at address "cells[index]"
+  // @TODO: Get the value of |index| global variable
+  // @TODO: Compute the offset of |cells| array based on |index|
+  // @TODO: Load the offset address from |cells|
+  // @TODO: Create a temporary variable that contains the |cells|[|index|] + |_step| result
+  // @TODO: Save the temporary variable at address |cells|[|index|]
 }
 </pre>
 
 
-<p>Note: You could ask why we use the <code>add</code> operator for decrement and not <code>sub</code>, since it's more natural. In old days for computing, <code>add -1</code> was generally much faster than "sub 1" but with modern architectures, it's different, and the best way is to let LLVM decides which platform-dependant optimisations will be made. Since IR code is platform independent, we can even not provide an hint for this. Just keep that LLVM will certainly knows better what to optimise and it's better to focus on algorithm and data structures optimisation than these silly ones, and keep the code clear for everyone.</p>
+<p>Note: You could ask why we use the <code>add</code> operator for decrement and not <code>sub</code>, since it's more natural. In old days for computing, <code>add -1</code> was generally much faster than <code>sub 1</code> but with modern architectures, it's different, and the best way is to let LLVM decides which platform-dependant optimisations will be made. Since IR code is platform independent, we can even not provide an hint for this. Just keep that LLVM will certainly knows better what to optimise and it's better to focus on algorithm and data structures optimisation than these silly ones, and keep the code simple and clear for everyone.</p>
 
 <p>The <code>InputExpr</code> expression, we will simply use the <code>scanf</code> C function, LLVM will link to it during compilation. We just need to pass arguments to this function and call it. The single catch is to create a global variable to store the format string, but we already know how to do it.</p>
 
@@ -1033,9 +1035,9 @@ void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
 {
   // @TODO: Prepare arguments (format string and input char)
   // @TODO: Call "scanf" std function
-  // @TODO: Get the value of "index" global variable
-  // @TODO: Compute the offset of "cells" array based on "index"
-  // @TODO: Save the temporary variable at address "cells[index]" (no operation, just overwrite)
+  // @TODO: Get the value of |index| global variable
+  // @TODO: Compute the offset of |cells| array based on |index|
+  // @TODO: Save the temporary variable at address |cells|[|index|] (no operation, just overwrite)
 }
 </pre>
 
@@ -1045,9 +1047,9 @@ void InputExpr::CodeGen(Module *M, IRBuilder<> &B)
 <pre>
 void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
 {
-  // @TODO: Get the value of "index" global variable
-  // @TODO: Compute the offset of "cells" array based on "index"
-  // @TODO: Load the offset address from "cells"
+  // @TODO: Get the value of |index| global variable
+  // @TODO: Compute the offset of |cells| array based on |index|
+  // @TODO: Load the offset address from |cells|
   // @TODO: Prepare arguments (format string and the current cell value)
   // @TODO: Call "printf" std function
 }
@@ -1060,13 +1062,13 @@ void OutputExpr::CodeGen(Module *M, IRBuilder<> &B)
 
 <p>In some way, blocks are like function, we can call them (using <em>branches</em>) but we can't pass argument to it, therefore variables created before the branch is made are still accessible.</p>
 
-<p>Branches are equally useful since a block must be call by a branch (except the first block of a function, called <code>EntryBlock</code>) and must finish by a branch or a <code>ret</code> (return, to exit a function) instruction. Branches can be <em>conditional</em> and <em>direct</em>.</p>
+<p>Branches are equally useful since a block must be call by a branch (except the first block of a function, called <code>EntryBlock</code>) and must finish by a branch or a <code>ret</code> (return, to exit a function) instruction. Branches can be <em>conditional</em> or <em>direct</em>.</p>
 
 <p>Basic blocks are constructed like so:</p>
 
 <pre>
   ; Previous instructions
-  br %BlockName ; Direct branching to "BlockName"
+  br %LoopBlock ; Direct branching to "LoopBlock"
 
 LoopBlock:
   ; Loop instructions
